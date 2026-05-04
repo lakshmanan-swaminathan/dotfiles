@@ -142,7 +142,7 @@ eval "$(zoxide init zsh --cmd cd)"
 
 # ---- Eza (better ls) -----
 
-alias ls="eza --icons=auto"
+alias ls="eza --icons=always"
 
 # ----- pyenv settings -----
 
