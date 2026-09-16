@@ -1,0 +1,183 @@
+# -------------------------
+# README
+# -------------------------
+# 1- Palette ownership:
+#    - Every segment background must come from [palettes.artbox].
+#    - Text colors are paired to their section:
+#      battery -> battery_bg
+#      user/host -> prompt_userhost_bg + user_fg
+#      directory -> prompt_directory_bg + directory_fg
+#      git info  -> prompt_git_info_bg + git_branch_fg/git_state_fg
+#      git status-> prompt_git_status_bg + git_status_fg
+#      venv      -> python_bg + python_fg
+#
+# 2- Transition character:
+#    - Use the glyph "" for all separators.
+#    - Connector fg color = predecessor segment background.
+#    - Connector bg color = successor segment background.
+#    - If there is no successor segment, use final connector with fg only.
+#
+# 3- Connector logic:
+#    - Show a connector only when both adjacent segments can render.
+#    - Keep dedicated final connectors for end-of-line cases:
+#      final_conn_directory, final_conn_git_info, final_conn_git, final_conn_venv.
+#    - If git status/state is not visible, transition from git info directly to
+#      venv (conn_git_info_venv) or to no background (final_conn_git_info).
+#
+# 4- Maintenance checklist for new segments:
+#    - Add/choose a palette background token first.
+#    - Add the segment format/style.
+#    - Add connector(s) before and after the segment.
+#    - Add a final connector path when the segment can terminate the line.
+#    - Keep when conditions mutually exclusive to avoid double separators.
+#
+# 5- Header size mode:
+#    - STARSHIP_HEADER_S=1 keeps the long header.
+#    - STARSHIP_HEADER_S=0 enables the short header.
+#    - Unset defaults to the long header.
+
+# -------------------------
+# Starship
+# -------------------------
+add_newline = false
+palette = "artbox"
+command_timeout = 60000
+
+format = """
+${custom.header_battery}\
+${custom.header_conn_userhost}\
+${custom.header_userhost}\
+${custom.header_conn_directory}\
+${custom.header_directory}\
+${custom.header_conn_directory_git}\
+${custom.header_conn_directory_venv}\
+${custom.header_git_ref}\
+${custom.header_conn_git_info_status}\
+${custom.header_git_state}\
+${custom.header_git_status}\
+${custom.header_conn_git_info_venv}\
+${custom.header_conn_git_venv}\
+${custom.header_venv}\
+${custom.header_final_conn_directory}\
+${custom.header_final_conn_git_info}\
+${custom.header_final_conn_git}\
+${custom.header_final_conn_venv}\
+"""
+
+# -------------------------
+# Palettes
+# -------------------------
+[palettes.artbox]
+# battery
+battery_bg = "#201f1d"
+
+# userhost
+prompt_userhost_bg = "#1e3e3a"
+user_fg = "#1cff64"
+
+#
+prompt_directory_bg = "#483b31"
+directory_fg = "#ff8400"
+
+# git
+prompt_git_info_bg = "#1b2d2b"
+git_branch_fg = "#3fb9ff"
+git_state_fg = "#ff4d4d"
+
+prompt_git_status_bg = "#2e3e31"
+git_status_fg = "#efff45"
+
+# venv
+python_bg = "#2c1526"
+python_fg = "#da7dff"
+
+# -------------------------
+# Header segments
+# -------------------------
+
+[custom.header_battery]
+format='[$output](bg:battery_bg)'
+command = 'cap=$(cat /sys/class/power_supply/BAT1/capacity 2>/dev/null) || exit 0; ac=$(cat /sys/class/power_supply/AC1/online 2>/dev/null || echo 0); if [ "${STARSHIP_HEADER_S:-1}" = "1" ]; then if [ "$ac" = "1" ]; then [ "$cap" -le 45 ] && printf "🪫⚡️" || printf "🔋⚡️"; else [ "$cap" -le 45 ] && printf "🪫🔻" || printf "🔋🔻"; fi; else [ "$cap" -lt 45 ] && printf "🪫"; fi'
+when = '''test -r /sys/class/power_supply/BAT1/capacity && { [ "${STARSHIP_HEADER_S:-1}" = "1" ] || [ "$(cat /sys/class/power_supply/BAT1/capacity)" -lt 45 ]; }'''
+
+[custom.header_userhost]
+format = "[$output](fg:user_fg bg:prompt_userhost_bg bold)"
+command = 'if [ "${STARSHIP_HEADER_S:-1}" = "1" ]; then printf "⌘ %s⎟%s" "$USER" "$(hostname)"; else printf "⌘ "; fi'
+when = "true"
+
+[custom.header_directory]
+format = "[$output](fg:directory_fg bg:prompt_directory_bg bold)"
+command = 'path=${PWD/#$HOME/\~}; if [ "${STARSHIP_HEADER_S:-1}" = "1" ]; then printf "🗁  %s" "$path"; else if [ "$PWD" = "$HOME" ]; then short_path="~"; else short_path=${PWD##*/}; [ -n "$short_path" ] || short_path="/"; fi; printf "🗁  %s" "$short_path"; fi'
+when = "true"
+
+[custom.header_git_ref]
+format = "[$output](fg:git_branch_fg bg:prompt_git_info_bg bold)"
+command = 'branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null) && { printf "⎇ %s" "$branch"; exit 0; }; hash=$(git rev-parse --short=7 HEAD 2>/dev/null) || exit 0; printf -- "-%s  " "$hash"'
+when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+
+[custom.header_git_state]
+format = "[$output](fg:git_state_fg bg:prompt_git_status_bg bold)"
+command = 'g=$(git rev-parse --git-dir 2>/dev/null) || exit 0; if [ -d "$g/rebase-merge" ] || [ -d "$g/rebase-apply" ]; then printf "▦ ⥅"; elif [ -f "$g/MERGE_HEAD" ]; then printf "▦ ↱↰"; elif [ -f "$g/REVERT_HEAD" ]; then printf "▦ ↶"; elif [ -f "$g/CHERRY_PICK_HEAD" ]; then printf "▦ ⤓"; elif [ -f "$g/BISECT_LOG" ]; then printf "▦ ↰↱"; fi'
+when = 'git rev-parse --is-inside-work-tree >/dev/null 2>&1 && [ "${STARSHIP_HEADER_S:-1}" = "1" ] && { g=$(git rev-parse --git-dir 2>/dev/null) && { [ -d "$g/rebase-merge" ] || [ -d "$g/rebase-apply" ] || [ -f "$g/MERGE_HEAD" ] || [ -f "$g/CHERRY_PICK_HEAD" ] || [ -f "$g/REVERT_HEAD" ] || [ -f "$g/BISECT_LOG" ]; }; }'
+
+[custom.header_git_status]
+format = "[$output](fg:git_status_fg bg:prompt_git_status_bg bold)"
+command = '''git status --porcelain=2 --branch --ignore-submodules=all 2>/dev/null | awk 'BEGIN { ahead=""; behind=""; staged=0; modified=0; deleted=0; untracked=0; renamed=0 } /^# branch.ab / { sub(/^\+/, "", $3); sub(/^-/, "", $4); if ($3 != "0") ahead = "⇡" $3; if ($4 != "0") behind = "⇣" $4; } /^[12] / { x = substr($2, 1, 1); y = substr($2, 2, 1); if (x != ".") staged = 1; if (y == "M" || y == "T") modified = 1; if (y == "D") deleted = 1; if ($1 == "2") renamed = 1; } /^u / { staged = 1; modified = 1; } /^\? / { untracked = 1; } END { out = ahead behind; if (staged) out = out "✓"; if (modified) out = out "Δ"; if (untracked) out = out "¿"; if (deleted) out = out "⛝"; if (renamed) out = out "Ɽ"; if (out != "") printf "✎ %s", out; }' '''
+when = '''git rev-parse --is-inside-work-tree >/dev/null 2>&1 && [ "${STARSHIP_HEADER_S:-1}" = "1" ] && git status --porcelain=2 --branch --ignore-submodules=all 2>/dev/null | awk 'BEGIN{show=0} /^# branch.ab /{if($3 !~ /^\+0$/ || $4 !~ /^-0$/) show=1} /^[12u?] /{show=1} END{exit show?0:1}' '''
+
+[custom.header_venv]
+format = "[$output](fg:python_fg bg:python_bg bold)"
+command = 'printf " %s" "$(basename -- "$VIRTUAL_ENV")"'
+when = 'test -n "$VIRTUAL_ENV"'
+
+# -------------------------
+# Connectors (seamless color transitions)
+# -------------------------
+
+[custom.header_conn_userhost]
+format = "[](fg:battery_bg bg:prompt_userhost_bg)"
+when = '''test -r /sys/class/power_supply/BAT1/capacity && { [ "${STARSHIP_HEADER_S:-1}" = "1" ] || [ "$(cat /sys/class/power_supply/BAT1/capacity)" -lt 45 ]; }'''
+
+[custom.header_conn_directory]
+format = "[](fg:prompt_userhost_bg bg:prompt_directory_bg)"
+when = "true"
+
+[custom.header_conn_directory_git]
+format = "[](fg:prompt_directory_bg bg:prompt_git_info_bg)"
+when = "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+
+[custom.header_conn_directory_venv]
+format = "[](fg:prompt_directory_bg bg:python_bg)"
+when = "test -n \"$VIRTUAL_ENV\" && ! git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+
+[custom.header_conn_git_info_status]
+format = "[](fg:prompt_git_info_bg bg:prompt_git_status_bg)"
+when = '''git rev-parse --is-inside-work-tree >/dev/null 2>&1 && [ "${STARSHIP_HEADER_S:-1}" = "1" ] && { g=$(git rev-parse --git-dir 2>/dev/null) && { [ -d "$g/rebase-merge" ] || [ -d "$g/rebase-apply" ] || [ -f "$g/MERGE_HEAD" ] || [ -f "$g/CHERRY_PICK_HEAD" ] || [ -f "$g/REVERT_HEAD" ] || [ -f "$g/BISECT_LOG" ] || git status --porcelain=2 --branch --ignore-submodules=all 2>/dev/null | awk 'BEGIN{show=0} /^# branch.ab /{if($3 !~ /^\+0$/ || $4 !~ /^-0$/) show=1} /^[12u?] /{show=1} END{exit show?0:1}'; }; }'''
+
+[custom.header_conn_git_info_venv]
+format = "[](fg:prompt_git_info_bg bg:python_bg)"
+when = '''test -n "$VIRTUAL_ENV" && git rev-parse --is-inside-work-tree >/dev/null 2>&1 && { [ "${STARSHIP_HEADER_S:-1}" != "1" ] || { g=$(git rev-parse --git-dir 2>/dev/null) && ! { [ -d "$g/rebase-merge" ] || [ -d "$g/rebase-apply" ] || [ -f "$g/MERGE_HEAD" ] || [ -f "$g/CHERRY_PICK_HEAD" ] || [ -f "$g/REVERT_HEAD" ] || [ -f "$g/BISECT_LOG" ] || git status --porcelain=2 --branch --ignore-submodules=all 2>/dev/null | awk 'BEGIN{show=0} /^# branch.ab /{if($3 !~ /^\+0$/ || $4 !~ /^-0$/) show=1} /^[12u?] /{show=1} END{exit show?0:1}'; }; }; }'''
+
+[custom.header_conn_git_venv]
+format = "[](fg:prompt_git_status_bg bg:python_bg)"
+when = '''test -n "$VIRTUAL_ENV" && git rev-parse --is-inside-work-tree >/dev/null 2>&1 && [ "${STARSHIP_HEADER_S:-1}" = "1" ] && { g=$(git rev-parse --git-dir 2>/dev/null) && { [ -d "$g/rebase-merge" ] || [ -d "$g/rebase-apply" ] || [ -f "$g/MERGE_HEAD" ] || [ -f "$g/CHERRY_PICK_HEAD" ] || [ -f "$g/REVERT_HEAD" ] || [ -f "$g/BISECT_LOG" ] || git status --porcelain=2 --branch --ignore-submodules=all 2>/dev/null | awk 'BEGIN{show=0} /^# branch.ab /{if($3 !~ /^\+0$/ || $4 !~ /^-0$/) show=1} /^[12u?] /{show=1} END{exit show?0:1}'; }; }'''
+
+# -------------------------
+# Final connector (no background)
+# -------------------------
+
+[custom.header_final_conn_directory]
+format = "[](fg:prompt_directory_bg)"
+when = "test -z \"$VIRTUAL_ENV\" && ! git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+
+[custom.header_final_conn_venv]
+format = "[](fg:python_bg)"
+when = 'test -n "$VIRTUAL_ENV"'
+
+[custom.header_final_conn_git_info]
+format = "[](fg:prompt_git_info_bg)"
+when = '''test -z "$VIRTUAL_ENV" && git rev-parse --is-inside-work-tree >/dev/null 2>&1 && { [ "${STARSHIP_HEADER_S:-1}" != "1" ] || { g=$(git rev-parse --git-dir 2>/dev/null) && ! { [ -d "$g/rebase-merge" ] || [ -d "$g/rebase-apply" ] || [ -f "$g/MERGE_HEAD" ] || [ -f "$g/CHERRY_PICK_HEAD" ] || [ -f "$g/REVERT_HEAD" ] || [ -f "$g/BISECT_LOG" ] || git status --porcelain=2 --branch --ignore-submodules=all 2>/dev/null | awk 'BEGIN{show=0} /^# branch.ab /{if($3 !~ /^\+0$/ || $4 !~ /^-0$/) show=1} /^[12u?] /{show=1} END{exit show?0:1}'; }; }; }'''
+
+[custom.header_final_conn_git]
+format = "[](fg:prompt_git_status_bg)"
+when = '''test -z "$VIRTUAL_ENV" && git rev-parse --is-inside-work-tree >/dev/null 2>&1 && [ "${STARSHIP_HEADER_S:-1}" = "1" ] && { g=$(git rev-parse --git-dir 2>/dev/null) && { [ -d "$g/rebase-merge" ] || [ -d "$g/rebase-apply" ] || [ -f "$g/MERGE_HEAD" ] || [ -f "$g/CHERRY_PICK_HEAD" ] || [ -f "$g/REVERT_HEAD" ] || [ -f "$g/BISECT_LOG" ] || git status --porcelain=2 --branch --ignore-submodules=all 2>/dev/null | awk 'BEGIN{show=0} /^# branch.ab /{if($3 !~ /^\+0$/ || $4 !~ /^-0$/) show=1} /^[12u?] /{show=1} END{exit show?0:1}'; }; }'''
